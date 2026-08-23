@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
-# Hysteria2 极简部署脚本（支持命令行端口参数 + 默认跳过证书验证）
+# Hysteria2 极简部署脚本（支持命令行端口参数 + 默认跳过证书验证 + 固定UUID + 自动最新版）
 # 适用于超低内存环境（32-64MB）
 
 set -e
 
 # ---------- 默认配置 ----------
-HYSTERIA_VERSION="v2.6.5"
 DEFAULT_PORT=22222         # 自适应端口
-AUTH_PASSWORD="ieshare2025"   # 建议修改为复杂密码
+UUID="8f3b7913-c91a-4ab7-b8d2-430c72f7a934" # 将此处替换为你想要固定的 UUID
 CERT_FILE="cert.pem"
 KEY_FILE="key.pem"
 SNI="www.bing.com"
@@ -17,6 +16,7 @@ ALPN="h3"
 
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "Hysteria2 极简部署脚本（Shell 版）"
+echo "支持自动拉取 Github 最新版本"
 echo "支持命令行端口参数，如：bash hysteria2.sh 443"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 
@@ -51,17 +51,30 @@ fi
 BIN_NAME="hysteria-linux-${ARCH}"
 BIN_PATH="./${BIN_NAME}"
 
-# ---------- 下载二进制 ----------
+# ---------- 下载二进制 (动态获取最新版本) ----------
 download_binary() {
     if [ -f "$BIN_PATH" ]; then
         echo "✅ 二进制已存在，跳过下载。"
         return
     fi
-    URL="https://github.com/apernet/hysteria/releases/download/app/${HYSTERIA_VERSION}/${BIN_NAME}"
-    echo "⏳ 下载: $URL"
+    
+    echo "🔍 正在从 GitHub 抓取 Hysteria2 的最新版本信息..."
+    local latest_tag
+    # 通过 Github API 获取最新的 release tag，例如 app/v2.12.1
+    latest_tag=$(curl -s "https://api.github.com/repos/apernet/hysteria/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    
+    if [ -z "$latest_tag" ]; then
+        echo "⚠️ 获取最新版本失败（可能是网络原因或 API 限流），将使用默认版本 app/v2.12.1"
+        latest_tag="app/v2.12.1"
+    else
+        echo "✅ 成功获取最新版本号: ${latest_tag}"
+    fi
+
+    URL="https://github.com/apernet/hysteria/releases/download/${latest_tag}/${BIN_NAME}"
+    echo "⏳ 正在下载: $URL"
     curl -L --retry 3 --connect-timeout 30 -o "$BIN_PATH" "$URL"
     chmod +x "$BIN_PATH"
-    echo "✅ 下载完成并设置可执行: $BIN_PATH"
+    echo "✅ 下载完成并已设置可执行权限: $BIN_PATH"
 }
 
 # ---------- 生成证书 ----------
@@ -87,7 +100,7 @@ tls:
     - "${ALPN}"
 auth:
   type: "password"
-  password: "${AUTH_PASSWORD}"
+  password: "${UUID}"
 bandwidth:
   up: "200mbps"
   down: "200mbps"
@@ -116,14 +129,14 @@ print_connection_info() {
     echo "📋 服务器信息:"
     echo "   🌐 IP地址: $IP"
     echo "   🔌 端口: $SERVER_PORT"
-    echo "   🔑 密码: $AUTH_PASSWORD"
+    echo "   🔑 密码(UUID): $UUID"
     echo ""
     echo "📱 节点链接（SNI=${SNI}, ALPN=${ALPN}, 跳过证书验证）:"
-    echo "hysteria2://${AUTH_PASSWORD}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Bing"
+    echo "hysteria2://${UUID}@${IP}:${SERVER_PORT}?sni=${SNI}&alpn=${ALPN}&insecure=1#Hy2-Bing"
     echo ""
     echo "📄 客户端配置文件:"
     echo "server: ${IP}:${SERVER_PORT}"
-    echo "auth: ${AUTH_PASSWORD}"
+    echo "auth: ${UUID}"
     echo "tls:"
     echo "  sni: ${SNI}"
     echo "  alpn: [\"${ALPN}\"]"
